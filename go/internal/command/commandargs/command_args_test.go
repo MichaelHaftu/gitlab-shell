@@ -22,23 +22,16 @@ func TestParseSuccess(t *testing.T) {
 				"SSH_CONNECTION":       "1",
 				"SSH_ORIGINAL_COMMAND": "",
 			},
-			expectedArgs: &CommandArgs{CommandType: Discover},
+			expectedArgs: &CommandArgs{SshArgs: []string{}, CommandType: Discover},
 		},
 		{
-			desc: "It passes on the original ssh command from the environment",
-			environment: map[string]string{
-				"SSH_CONNECTION":       "1",
-				"SSH_ORIGINAL_COMMAND": "hello world",
-			},
-			expectedArgs: &CommandArgs{SshCommand: "hello world"},
-		}, {
 			desc: "It finds the key id in any passed arguments",
 			environment: map[string]string{
 				"SSH_CONNECTION":       "1",
 				"SSH_ORIGINAL_COMMAND": "",
 			},
 			arguments:    []string{"hello", "key-123"},
-			expectedArgs: &CommandArgs{CommandType: Discover, GitlabKeyId: "123"},
+			expectedArgs: &CommandArgs{SshArgs: []string{}, CommandType: Discover, GitlabKeyId: "123"},
 		}, {
 			desc: "It finds the username in any passed arguments",
 			environment: map[string]string{
@@ -46,7 +39,35 @@ func TestParseSuccess(t *testing.T) {
 				"SSH_ORIGINAL_COMMAND": "",
 			},
 			arguments:    []string{"hello", "username-jane-doe"},
-			expectedArgs: &CommandArgs{CommandType: Discover, GitlabUsername: "jane-doe"},
+			expectedArgs: &CommandArgs{SshArgs: []string{}, CommandType: Discover, GitlabUsername: "jane-doe"},
+		}, {
+			desc: "It parses 2fa_recovery_codes command",
+			environment: map[string]string{
+				"SSH_CONNECTION":       "1",
+				"SSH_ORIGINAL_COMMAND": "2fa_recovery_codes",
+			},
+			expectedArgs: &CommandArgs{SshArgs: []string{"2fa_recovery_codes"}, CommandType: TwoFactorRecover},
+		}, {
+			desc: "It parses git-receive-pack command",
+			environment: map[string]string{
+				"SSH_CONNECTION":       "1",
+				"SSH_ORIGINAL_COMMAND": "git-receive-pack group/repo",
+			},
+			expectedArgs: &CommandArgs{SshArgs: []string{"git-receive-pack", "group/repo"}, CommandType: ReceivePack},
+		}, {
+			desc: "It parses git-receive-pack command and a project with single quotes",
+			environment: map[string]string{
+				"SSH_CONNECTION":       "1",
+				"SSH_ORIGINAL_COMMAND": "git receive-pack 'group/repo'",
+			},
+			expectedArgs: &CommandArgs{SshArgs: []string{"git-receive-pack", "group/repo"}, CommandType: ReceivePack},
+		}, {
+			desc: `It parses "git receive-pack" command`,
+			environment: map[string]string{
+				"SSH_CONNECTION":       "1",
+				"SSH_ORIGINAL_COMMAND": `git receive-pack "group/repo"`,
+			},
+			expectedArgs: &CommandArgs{SshArgs: []string{"git-receive-pack", "group/repo"}, CommandType: ReceivePack},
 		},
 	}
 
@@ -70,4 +91,16 @@ func TestParseFailure(t *testing.T) {
 		assert.Error(t, err, "Only ssh allowed")
 	})
 
+	t.Run("It fails if SSH command is invalid", func(t *testing.T) {
+		environment := map[string]string{
+			"SSH_CONNECTION":       "1",
+			"SSH_ORIGINAL_COMMAND": `git receive-pack "`,
+		}
+		restoreEnv := testhelper.TempEnv(environment)
+		defer restoreEnv()
+
+		_, err := Parse([]string{})
+
+		assert.Error(t, err, "Invalid ssh command")
+	})
 }
